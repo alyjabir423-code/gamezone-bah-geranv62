@@ -2014,7 +2014,7 @@ function renderPostes(){
     div.innerHTML=`
       <div class="prise-ind ${priseInd}"></div>
       <div class="pc-top"><div class="pc-num">${speechPosteName(p.num)}</div><span class="pb ${bcl}">${btxt}</span></div>
-      <div class="pc-type">${escapeHtml(p.typeCustom||p.type)}</div>
+      <div class="pc-type">${escapeHtml(gzGerantTypeLabel(p))}</div>
       <div class="pc-timer-row">
         <div class="pc-timer ${tcls}">${p.actif?ts:'—:——'}</div>
         <div class="pc-amount">${p.actif?montant.toLocaleString('fr-FR')+' F':''}</div>
@@ -2227,6 +2227,13 @@ function renderJournal(){
 // ══════════════════════════════════════
 // GRIDS
 // ══════════════════════════════════════
+function gzGerantTypeLabel(poste){
+  const type=String(poste&&poste.type||'');
+  const custom=String(poste&&poste.typeCustom||'').trim();
+  const labels=DB.get('tarif_type_labels')||{};
+  const key=type.trim().replace(/\s+/g,' ').toLocaleLowerCase('fr');
+  return custom||String(labels[key]||type);
+}
 function tarifsForPoste(p){
   const all=DB.get('tarifs')||[];
   const key=v=>String(v==null?'':v).trim().replace(/\s+/g,' ').toLocaleLowerCase('fr');
@@ -2244,7 +2251,7 @@ function buildDureeGrid(){
   const p=postes[modalPosteIdx];
   const tarifs=tarifsForPoste(p).sort((a,b)=>a.min-b.min);
   const grid=document.getElementById('duree-grid');
-  if(!tarifs.length){grid.innerHTML=`<div style="font-size:12px;color:var(--muted);grid-column:span 3">Aucun tarif configuré pour ${escapeHtml(p.typeCustom||p.type)}.</div>`;return;}
+  if(!tarifs.length){grid.innerHTML=`<div style="font-size:12px;color:var(--muted);grid-column:span 3">Aucun tarif configuré pour ${escapeHtml(gzGerantTypeLabel(p))}.</div>`;return;}
   grid.innerHTML=tarifs.map((t,i)=>`
     <div class="dopt ${i===0?'sel':''}" onclick="selDureeOpt(this,${t.min})">
       <div class="dm">${t.lbl}</div>
@@ -2262,7 +2269,7 @@ function buildPlusGrid(){
   const p=postes[modalPosteIdx];
   const tarifs=tarifsForPoste(p).sort((a,b)=>a.min-b.min);
   const grid=document.getElementById('plus-grid');
-  if(!tarifs.length){grid.innerHTML=`<div style="font-size:12px;color:var(--muted)">Aucun tarif pour ${escapeHtml(p.typeCustom||p.type)}.</div>`;return;}
+  if(!tarifs.length){grid.innerHTML=`<div style="font-size:12px;color:var(--muted)">Aucun tarif pour ${escapeHtml(gzGerantTypeLabel(p))}.</div>`;return;}
   grid.innerHTML=tarifs.map((t,i)=>`
     <div class="plusopt ${i===0?'sel':''}" onclick="selPlusDureeOpt(this,${t.min})">
       <div class="pm2">+${t.lbl}</div>
