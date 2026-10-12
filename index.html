@@ -1430,12 +1430,12 @@ function resetRoomCode(){
 // une fois déployé (ex: https://tuya-relay.tonpseudo.workers.dev).
 
 const CP1_DEVICE_IDS={
-  'poste1':'bfe898207ecd75437dx5fw',
+  'poste1':'bf77859fcb75e26cf11f4o',
   'poste2':'bfba8b667e37b21c5dxnqz',
   'pote2':'bfba8b667e37b21c5dxnqz',
   'poste3':'bf3928e0c6b5baa56eobvv',
-  'poste4':'bf77859fcb75e26cf11f4o',
-  'poste5':'bf7b869fe5f118b73dauab',
+  'poste4':'bf7b869fe5f118b73dauab',
+  'poste5':'bfe898207ecd75437dx5fw',
   'poste6':'bf4f7b47b4f9ec2451fgex'
 };
 function normalizedPosteName(v){return String(v||'').toLowerCase().replace(/[^a-z0-9]/g,'');}
@@ -1897,12 +1897,10 @@ function gzBonusDisplayForPoste(a){
 
 function renderPostes(){
   const grid=document.getElementById('postes-grid');
-  if(!postes.length){
-    grid.innerHTML='<div style="grid-column:span 2;padding:20px;text-align:center;font-size:13px;color:var(--muted)">Aucun poste configuré.<br>Le patron doit en ajouter.</div>';
-    return;
-  }
   let libres=0;
   grid.innerHTML='';
+  // Même sans poste TV, toujours construire la carte Case 7 BONUS ci-dessous.
+  if(!postes.length)grid.insertAdjacentHTML('beforeend','<div style="grid-column:span 2;padding:20px;text-align:center;font-size:13px;color:var(--muted)">Aucun poste configuré.<br>Le patron doit en ajouter.</div>');
   orderedPostesEntries(postes).forEach(({p,i})=>{
     if(!p.actif) libres++;
     const tempsRest=remainingSec(p);
@@ -1960,7 +1958,7 @@ function renderPostes(){
   const bonusRest=bonusActifs.length?Math.min(...bonusActifs.map(gzOfferedRemainingSeconds)):0;
   const bonusTone=bonusActifs.length?gzProgressTone(bonusRest,bonusActifs.every(x=>x.paused)):'';
   const bonusBar='<div class="gz-yellow-meta">⏱ BONUS GRATUIT RESTANT — '+(bonusActifs.length?fmtDurationSec(bonusLeft):'Aucun bonus actif')+'</div><div class="gz-yellow-progress"><div class="gz-yellow-fill '+bonusTone+'" style="width:'+bonusPct.toFixed(2)+'%"></div></div>';
-  bonus.innerHTML='<div class="bonus-title">🎁 CASE 7 — BONUS CLIENT FIDÈLE</div><div class="bonus-note">Bonus automatique : PS3 1 000/1 500/2 000 F → 20/25/30 min ; PS4/PS5 → 15/20/25 min. Bonus manuel Patron conservé.</div><span class="bonus-readonly">👁 Affichage seulement · Gérant</span>'+bonusBar+live;
+  bonus.innerHTML='<div class="bonus-title">🎁 CASE 7 — BONUS CLIENT FIDÈLE</div><div class="bonus-note">Bonus automatique postes TV 1 à 6 : 1 000 F → 15 min, 2 000 F → 20 min, 3 000 F → 25 min, puis +5 min par 1 000 F. Bonus manuel Patron conservé.</div><span class="bonus-readonly">👁 Affichage seulement · Gérant</span>'+bonusBar+live;
   grid.appendChild(bonus);
 
   document.getElementById('s-libre').textContent=`${libres} libre${libres>1?'s':''}`;
