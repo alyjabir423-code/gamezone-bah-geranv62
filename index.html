@@ -1460,6 +1460,25 @@ function resetRoomCode(){
 // autorise le CORS. Remplace l'URL ci-dessous par celle de TON Worker
 // une fois déployé (ex: https://tuya-relay.tonpseudo.workers.dev).
 
+
+// CP1 uniquement : correspondances Tuya vérifiées, jamais les prises ARABI.
+const GZ_CP1_TUYA_IDS=Object.freeze({1:'bf77859fcb75e26cf11f4o',2:'bfba8b667e37b21c5dxnqz',3:'bf3928e0c6b5baa56eobvv',4:'bf7b869fe5f118b73dauab',5:'bfe898207ecd75437dx5fw',6:'bf4f7b47b4f9ec2451fgex'});
+function gzCP1DeviceId(poste){
+  const stored=String((poste&&poste.devid)||'').trim();
+  if(String(currentTenantKey||'').toUpperCase()!=='GZ-07732')return stored;
+  const raw=String((poste&&(poste.num||poste.nom||poste.name))||'');
+  const match=raw.match(/(?:poste|post|p)\s*[-_#:]?\s*([1-6])(?:\D|$)/i) || raw.match(/^([1-6])$/);
+  const correct=match?GZ_CP1_TUYA_IDS[Number(match[1])]:null;
+  if(correct&&stored&&stored!==correct)console.warn('CP1 : association Tuya corrigée pour',raw);
+  return correct||stored;
+}
+let gzTuyaError='';
+function gzTuyaErrorText(){return gzTuyaError?' — '+gzTuyaError:'';}
+function gzTuyaReason(response,data,phase){
+  const msg=String((data&&(data.error||data.message||data.msg||data.detail))||'').slice(0,150);
+  return phase+' HTTP '+response.status+(msg?' : '+msg:'');
+}
+
 const CP1_DEVICE_IDS={
   'poste1':'bf77859fcb75e26cf11f4o',
   'poste2':'bfba8b667e37b21c5dxnqz',
@@ -1473,7 +1492,7 @@ function normalizedPosteName(v){return String(v||'').toLowerCase().replace(/[^a-
 function resolvedDeviceId(poste){
   // V45 : Firebase est la source unique de l'identifiant de prise.
   // Ne jamais remplacer une association récente par un ancien ID codé en dur.
-  return String((poste&&poste.devid)||'').trim();
+  return gzCP1DeviceId(poste);
 }
 const tuyaPowerEpoch={};
 function beginPowerAction(poste){
@@ -1483,26 +1502,12 @@ function beginPowerAction(poste){
 const TUYA_WORKER_URL = 'https://gamezone-tuya-bah.bahmamadou4234.workers.dev';
 
 // Envoie une commande ON/OFF à une prise via le Cloud Tuya (par le Worker Cloudflare)
-// Diagnostic local uniquement : aucun jeton ou secret n'est affiche.
-let gzTuyaLastError='';
-function gzTuyaDiagnostic(http,data,phase){
-  const status=Number(http)||0;
-  const reason=String((data&&(data.error||data.message||data.msg||data.code))||'').slice(0,120);
-  if(status===401)return 'Firebase : authentification refusee (401)';
-  if(status===403)return 'Firebase/Worker : acces refuse (403), verifier les droits de la salle et de la prise';
-  if(status===400)return 'Configuration : commande ou prise invalide (400)';
-  if(status===404)return 'Worker : adresse ou route introuvable (404)';
-  if(status===429)return 'Service : trop de demandes (429)';
-  if(status>=500)return 'Worker/Tuya : erreur serveur '+status+(reason?' - '+reason:'');
-  if(!status)return 'Reseau : Worker inaccessible';
-  return (phase==='status'?'Statut Tuya':'Commande Tuya')+' : HTTP '+status+(reason?' - '+reason:'');
-}
 async function tuyaCommand(poste, turnOn){
-  gzTuyaLastError='';
+  gzTuyaError="";
   if(turnOn===false && !(await gzSafeToSwitchOffShared(poste))){console.warn('OFF bloqué : prise partagée utilisée');return false;}
   const resolvedId=resolvedDeviceId(poste);
   if(!poste || !resolvedId){
-    gzTuyaLastError='Configuration : prise non configuree';
+    console.log('Prise non configurée pour', poste&&poste.num);
     return false;
   }
   const controller=(typeof AbortController!=='undefined')?new AbortController():null;
@@ -1510,7 +1515,7 @@ async function tuyaCommand(poste, turnOn){
   try{
     const idToken=await ensureFirebaseToken();
     if(!idToken){
-      gzTuyaLastError='Firebase : session absente';
+      gzTuyaError='Session Firebase absente';console.log('Commande Tuya bloquée : session Firebase absente');
       return false;
     }
     const resp = await fetch(TUYA_WORKER_URL, {
@@ -1525,13 +1530,13 @@ async function tuyaCommand(poste, turnOn){
     });
     let data=null;
     try{ data=await resp.json(); }catch(e){}
-    if(!resp.ok||!data||!data.success){gzTuyaLastError=gzTuyaDiagnostic(resp.status,data,'commande');console.warn(gzTuyaLastError);return false;}
+    console.log('Tuya cloud response (via Worker):', data);
+    if(!resp.ok||!data||!data.success){gzTuyaError=gzTuyaReason(resp,data,'Commande');return false;}
     const confirmed=await gzVerifySwitchG(poste,turnOn);
-    if(!confirmed&&!gzTuyaLastError)gzTuyaLastError='Tuya : commande acceptee mais etat ON/OFF non confirme';
+    if(!confirmed&&!gzTuyaError)gzTuyaError='Commande acceptée, état ON/OFF non confirmé';
     return confirmed;
   } catch(e){
-    gzTuyaLastError=e&&e.name==='AbortError'?'Reseau/Worker : delai depasse':('Reseau/Firebase : '+String(e&&e.name||'connexion impossible'));
-    console.warn(gzTuyaLastError);
+    gzTuyaError=String(e&&e.message||e);console.log('Commande Tuya (cloud) echouee:', e);
     return false;
   } finally {
     if(timer) clearTimeout(timer);
@@ -1547,14 +1552,12 @@ async function gzReadSwitchStateG(poste){
   const r=await fetch(TUYA_WORKER_URL,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},
     body:JSON.stringify({tenantKey:currentTenantKey,action:'status',devid}),cache:'no-store'});
   const d=await r.json().catch(()=>({}));
-  if(!r.ok||!d.success||!d.device){gzTuyaLastError=gzTuyaDiagnostic(r.status,d,'status');return null;}
-  if(d.device.online!==true){gzTuyaLastError='Tuya : prise hors ligne';return null;}
-  if(typeof d.device.switchOn!=='boolean'){gzTuyaLastError='Tuya : etat switch_1 absent';return null;}
-  return d.device.switchOn;
+  if(!r.ok||!d.success||!d.device){gzTuyaError=gzTuyaReason(r,d,'Statut');return null;}
+  return d.device.online===true && typeof d.device.switchOn==='boolean'?d.device.switchOn:null;
 }
 async function gzVerifySwitchG(poste,expected){
-  for(let n=0;n<5;n++){
-    if(n)await sleepMs(550);
+  for(let n=0;n<8;n++){
+    if(n)await sleepMs(750);
     try{const v=await gzReadSwitchStateG(poste);if(v===expected)return true;}
     catch(e){console.log('Statut prise indisponible:',e);}
   }
@@ -2376,7 +2379,7 @@ async function confirmerSession(){
     showToast('⏳ Vérification allumage '+p.num+' ...');
     // ÉTAPE 2 : la prise doit être réellement ON, sinon on ne démarre pas le compteur.
     powered=await allumerPrise(p);
-    if(!powered)throw new Error((gzTuyaLastError||'Tuya : etat ON non confirme')+' - temps non active');
+    if(!powered)throw new Error('Prise non allumée ou statut Tuya non confirmé : temps non activé'+gzTuyaErrorText());
     // ÉTAPE 3 : compteur et recette une seule fois, seulement après confirmation ON.
     const tx=await fbRoot.transaction(root=>{
       root=root||{};const r=rootReadActive(root,p,idx)||{};
