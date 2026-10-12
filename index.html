@@ -1499,7 +1499,7 @@ function beginPowerAction(poste){
   const id=resolvedDeviceId(poste); if(!id) return {id:'',epoch:0};
   const epoch=(tuyaPowerEpoch[id]||0)+1; tuyaPowerEpoch[id]=epoch; return {id,epoch};
 }
-const TUYA_WORKER_URL = 'https://gamezone-tuya-bah.bahmamadou4234.workers.dev';
+const TUYA_WORKER_URL = 'https://gamezone-bah-nouvauxcp1.bahmamadou4234.workers.dev';
 
 // Envoie une commande ON/OFF à une prise via le Cloud Tuya (par le Worker Cloudflare)
 async function tuyaCommand(poste, turnOn){
