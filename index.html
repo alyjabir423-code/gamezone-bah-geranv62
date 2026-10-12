@@ -2227,13 +2227,17 @@ function renderJournal(){
 // ══════════════════════════════════════
 // GRIDS
 // ══════════════════════════════════════
-function gzGerantTypeLabel(poste){
-  const type=String(poste&&poste.type||'');
-  const custom=String(poste&&poste.typeCustom||'').trim();
+// Correspondance libellé personnalisé côté PATRON, lecture seule.
+// Le type stocké (PS1, Autres, etc.) reste intact pour les tarifs.
+function gzGerantTypeLabel(p){
+  const custom=String(p&&p.typeCustom||'').trim();
+  if(custom)return custom;
+  const type=String(p&&p.type||'').trim();
+  const key=type.toLocaleLowerCase('fr');
   const labels=DB.get('tarif_type_labels')||{};
-  const key=type.trim().replace(/\s+/g,' ').toLocaleLowerCase('fr');
-  return custom||String(labels[key]||type);
+  return String(labels[key]||type);
 }
+
 function tarifsForPoste(p){
   const all=DB.get('tarifs')||[];
   const key=v=>String(v==null?'':v).trim().replace(/\s+/g,' ').toLocaleLowerCase('fr');
