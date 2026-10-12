@@ -1193,6 +1193,37 @@ function rootReadActive(root,p,idx){
   if(!legacy && Number.isInteger(idx) && idx>=0) legacy=arr[idx]||null;
   return legacy||{};
 }
+
+// PS5/PS2 : deux noms de poste peuvent partager UNE prise physique.
+// Vérification transactionnelle, y compris les séances mises en pause.
+function gzSharedPlugOccupant(root, poste, idx){
+  root=root||{};
+  const id=String(poste&&poste.devid||'').trim();
+  if(!id)return null;
+  const all=Array.isArray(root.postes)?root.postes:[];
+  for(let j=0;j<all.length;j++){
+    const other=all[j];
+    if(!other||j===idx||String(other.num||'')===String(poste.num||'')||String(other.devid||'').trim()!==id)continue;
+    const st=rootReadActive(root,other,j)||{};
+    if(st.actif||(st.starting&&Date.now()<Number(st.startingUntil||0))||(st.cleanup&&Date.now()<Number(st.cleanupUntil||0)))return other;
+  }
+  return null;
+}
+function gzSharedPlugPartners(poste){
+  const id=String(poste&&poste.devid||'').trim();
+  return id?(postes||[]).filter(x=>x&&String(x.num||'')!==String(poste.num||'')&&String(x.devid||'').trim()===id):[];
+}
+async function gzSafeToSwitchOffShared(poste){
+  if(!gzSharedPlugPartners(poste).length)return true;
+  if(!fbRoot)return false;
+  try{
+    const snap=await fbRoot.once('value');
+    const root=snap.val()||{};
+    const idx=(root.postes||[]).findIndex(x=>x&&x.num===poste.num);
+    return !gzSharedPlugOccupant(root,poste,idx);
+  }catch(e){console.warn('Prise partagée : contrôle OFF impossible',e);return false;}
+}
+
 function rootWriteActive(root,p,idx,state){
   root=root||{};
   const arr=Array.isArray(root.active_postes)?root.active_postes.slice():[];
@@ -1453,6 +1484,7 @@ const TUYA_WORKER_URL = 'https://gamezone-tuya-bah.bahmamadou4234.workers.dev';
 
 // Envoie une commande ON/OFF à une prise via le Cloud Tuya (par le Worker Cloudflare)
 async function tuyaCommand(poste, turnOn){
+  if(turnOn===false && !(await gzSafeToSwitchOffShared(poste))){console.warn('OFF bloqué : prise partagée utilisée');return false;}
   const resolvedId=resolvedDeviceId(poste);
   if(!poste || !resolvedId){
     console.log('Prise non configurée pour', poste&&poste.num);
@@ -1579,6 +1611,7 @@ async function allumerPrise(poste){
 }
 
 async function eteindrePrise(poste, raison='manuel'){
+  if(!(await gzSafeToSwitchOffShared(poste))){showToast('⚠️ OFF bloqué : une autre console utilise cette prise');return false;}
   const action=beginPowerAction(poste); // annule immédiatement toute ancienne tentative ON
   if(!action.id) return true;
   if(raison==='timer' && Number(poste&&poste.finTs)>0 && Date.now()<Number(poste.finTs)) return false;
@@ -1923,7 +1956,7 @@ function renderPostes(){
     div.innerHTML=`
       <div class="prise-ind ${priseInd}"></div>
       <div class="pc-top"><div class="pc-num">${speechPosteName(p.num)}</div><span class="pb ${bcl}">${btxt}</span></div>
-      <div class="pc-type">${p.type}</div>
+      <div class="pc-type">${escapeHtml(p.typeCustom||p.type)}</div>
       <div class="pc-timer-row">
         <div class="pc-timer ${tcls}">${p.actif?ts:'—:——'}</div>
         <div class="pc-amount">${p.actif?montant.toLocaleString('fr-FR')+' F':''}</div>
@@ -1931,7 +1964,7 @@ function renderPostes(){
       <div class="pc-bar-wrap"><div class="pc-bar ${bcls}" style="width:${pct}%"></div></div>
       <div class="pc-client">${p.actif?escapeHtml(p.client):'Disponible'}</div>
       ${gzBonusDisplayForPoste(p)}
-      <div class="pc-prise">${hasPrise?'🔌 Prise liée':'⚠️ Sans prise'}</div>
+      <div class="pc-prise">${hasPrise?(gzSharedPlugPartners(p).length?'🔌 Prise partagée avec '+escapeHtml(gzSharedPlugPartners(p).map(x=>x.num).join(', ')):'🔌 Prise liée'):'⚠️ Sans prise'}</div>
       <div class="pc-acts">
         ${expired?'<span class="pc-btn" style="grid-column:1/-1;text-align:center">⏳ Temps terminé — libération automatique</span>':p.actif
           ?`${p.paused
@@ -2201,6 +2234,8 @@ function selPayOpt(el,id,cid,varName){
 function openStart(i){
   modalPosteIdx=i;
   const p=postes[i];
+  const other=gzSharedPlugOccupant(DB._cache||{},p,i);
+  if(other){showToast('🔌 Prise utilisée par '+other.num+' : terminez cette session avant de lancer '+p.num);return;}
   document.getElementById('ms-title').textContent=`${p.num} — Nouvelle session`;
   document.getElementById('ms-nom').value='';
   const hasPrise=!!(p.devid);
@@ -2234,12 +2269,13 @@ async function confirmerSession(){
     // ÉTAPE 1 : réservation temporaire, compteur arrêté et aucune recette ajoutée.
     const reserve=await fbRoot.transaction(root=>{
       root=root||{};const r=rootReadActive(root,p,idx)||{};
+      if(gzSharedPlugOccupant(root,p,idx))return undefined;
       if(r.actif||(r.starting&&Date.now()<Number(r.startingUntil||0))||(r.cleanup&&Date.now()<Number(r.cleanupUntil||0)))return undefined;
       rootWriteActive(root,p,idx,{actif:false,starting:true,startingUntil:Date.now()+45000,
         client:nom,sessionId:sid,finTs:0,paused:false,montantSession:0,updatedAt:Date.now()});
       return root;
     });
-    if(!reserve||!reserve.committed)return showToast('⚠️ Poste occupé ou activation en cours');
+    if(!reserve||!reserve.committed)return showToast('⚠️ Poste occupé ou prise Tuya partagée déjà utilisée par une autre console.');
     reserved=true;
     showToast('⏳ Vérification allumage '+p.num+' ...');
     // ÉTAPE 2 : la prise doit être réellement ON, sinon on ne démarre pas le compteur.
@@ -2248,7 +2284,7 @@ async function confirmerSession(){
     // ÉTAPE 3 : compteur et recette une seule fois, seulement après confirmation ON.
     const tx=await fbRoot.transaction(root=>{
       root=root||{};const r=rootReadActive(root,p,idx)||{};
-      if(!r.starting||r.sessionId!==sid||r.actif)return undefined;
+      if(!r.starting||r.sessionId!==sid||r.actif||gzSharedPlugOccupant(root,p,idx))return undefined;
       const now=Date.now();
       const active={actif:true,starting:false,startingUntil:0,client:nom,finTs:now+duree*60000,
         tempsTotal:duree*60,dureeMin:duree,paused:false,pauseRemainingSec:0,montantSession:prix,
