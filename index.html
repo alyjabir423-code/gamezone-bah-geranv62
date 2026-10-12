@@ -1744,25 +1744,27 @@ async function doLogin(){
   if(!code){err.textContent='Entrez d’abord le code de la salle.';return;}
   if(!username||!p){err.textContent='Entrez votre nom d’utilisateur et votre mot de passe.';return;}
 
-  // L'écran n'affiche plus l'e-mail Firebase au gérant.
-  // Les anciens noms connus de CP1 sont reliés en interne au compte Firebase autorisé.
-  const normalized=username.toLowerCase().replace(/\s+/g,' ').trim();
-  const aliases={
-    'cp1':'alyjabir423@gmail.com',
-    'geran patron':'alyjabir423@gmail.com',
-    'gérant patron':'alyjabir423@gmail.com',
-    'gerant':'alyjabir423@gmail.com',
-    'gérant':'alyjabir423@gmail.com',
-    'mon petit':'alyjabir423@gmail.com',
-    'monpetit':'alyjabir423@gmail.com'
-  };
-  const email=aliases[normalized] || (username.includes('@') ? username : '');
-  if(!email){err.textContent='Nom d’utilisateur incorrect.';return;}
-
+  // Le Gérant saisit uniquement son identifiant personnel et son mot de passe.
+  // Seul PATRON peut créer, bloquer ou supprimer son identité Firebase.
+  const normalized=username.toLowerCase().trim();
+  if(!/^[a-z0-9_-]{2,24}$/.test(normalized)){
+    err.textContent='Identifiant ou mot de passe incorrect.';return;
+  }
+  let staffRecord;
+  try{
+    const lookup=FIREBASE_DB_URL+'/staff_login/gz_'+encodeURIComponent(code)+'/'+encodeURIComponent(normalized)+'.json?ts='+Date.now();
+    const response=await fetch(lookup,{cache:'no-store'});
+    if(!response.ok)throw Error('Accès aux comptes impossible : vérifiez les règles Firebase.');
+    staffRecord=await response.json();
+    if(!staffRecord || !staffRecord.uid || !staffRecord.email){err.textContent='Identifiant ou mot de passe incorrect.';return;}
+    if(staffRecord.enabled!==true){err.textContent='Ce compte Gérant est BLOQUÉ par le Patron.';return;}
+  }catch(e){err.textContent=e.message||'Vérification du compte impossible.';return;}
+  const email=staffRecord.email;
   err.textContent='';
   document.getElementById('fb-loading').style.display='flex';
   try{
     const auth=await firebaseEmailLogin(email,p);
+    if(auth.uid!==staffRecord.uid)throw new Error('Compte Gérant non autorisé pour cet identifiant.');
     const roomNode='gz_'+code;
     const access=await restFetchJson(restUrl('access/'+auth.uid+'/rooms/'+roomNode));
     if(access.data!=='gerant') throw new Error('Ce compte n’est pas autorisé comme Gérant pour cette salle.');
@@ -1786,6 +1788,7 @@ async function doLogin(){
     boot();
     initApp();
     DB.onChange(refreshFromRemote);
+    gzStaffStartWatch(code,normalized,auth.uid);
   }catch(e){
     clearFirebaseSession();
     document.getElementById('fb-loading').style.display='none';
@@ -1795,6 +1798,7 @@ async function doLogin(){
 }
 
 function doLogout(){
+  gzStaffStopWatch();
   saveActive();
   loggedIn=false;
   clearFirebaseSession();
@@ -1806,6 +1810,60 @@ function doLogout(){
   document.getElementById('lp').value='';
 }
 document.getElementById('lp').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
+
+// Contrôle de compte toutes les 8 secondes : le Patrón peut bloquer un gérant
+// depuis son propre téléphone même si la session est déjà ouverte ailleurs.
+let gzStaffWatchTimer=null;
+let gzStaffWatchBusy=false;
+let gzStaffWatchId=null;
+function gzStaffStopWatch(){
+  if(gzStaffWatchTimer)clearInterval(gzStaffWatchTimer);
+  gzStaffWatchTimer=null;gzStaffWatchId=null;
+}
+function gzStaffLockedOut(msg){
+  gzStaffStopWatch();
+  loggedIn=false;
+  clearFirebaseSession();
+  try{if(fbEventSource)fbEventSource.close();}catch(e){}
+  fbEventSource=null;
+  if(fbPollTimer)clearInterval(fbPollTimer);fbPollTimer=null;
+  const code=(gzStorageGet('gz_room_key')||'').trim();
+  try{gzStorageRemove('gz_tenant_cache_'+code);}catch(e){}
+  DB._cache={};DB._ready=false;
+  document.getElementById('app').style.display='none';
+  document.getElementById('login-screen').style.display='flex';
+  document.getElementById('lp').value='';
+  document.getElementById('lerr').textContent=msg||'Accès retiré par le Patron.';
+}
+function gzStaffStartWatch(code,username,uid){
+  gzStaffStopWatch();
+  const identity=code+'|'+username+'|'+uid;
+  gzStaffWatchId=identity;
+  async function check(){
+    if(!loggedIn||gzStaffWatchBusy||gzStaffWatchId!==identity)return;
+    gzStaffWatchBusy=true;
+    try{
+      const path=FIREBASE_DB_URL+'/staff_login/gz_'+encodeURIComponent(code)+'/'+encodeURIComponent(username)+'.json?check='+Date.now();
+      const response=await fetch(path,{cache:'no-store'});
+      if(!response.ok)return;
+      const record=await response.json();
+      if(gzStaffWatchId!==identity)return;
+      if(!record||record.enabled!==true||record.uid!==uid){
+        gzStaffLockedOut('🔒 Ton accès a été bloqué ou supprimé par le Patron.');return;
+      }
+      const role=await restFetchJson(restUrl('access/'+uid+'/rooms/gz_'+code));
+      if(gzStaffWatchId===identity&&role.data!=='gerant')gzStaffLockedOut('🔒 Autorisation Firebase retirée par le Patron.');
+    }catch(e){
+      // Une simple panne Internet ne doit pas supprimer les données ou les ventes.
+      // Les écritures non autorisées sont refusées directement par Firebase.
+      if(/403|401|Permission denied|PERMISSION_DENIED/i.test(String(e&&e.message||e))){
+        if(gzStaffWatchId===identity)gzStaffLockedOut('🔒 Accès Firebase révoqué.');
+      }
+    }finally{gzStaffWatchBusy=false;}
+  }
+  gzStaffWatchTimer=setInterval(check,8000);
+  check();
+}
 
 // ══════════════════════════════════════
 // INIT
