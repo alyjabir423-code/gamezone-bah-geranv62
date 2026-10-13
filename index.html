@@ -3440,6 +3440,7 @@ async function gzFinishExpiredG(i,p){
     }catch(e){console.warn('Extinction après libération:',e);}
     renderPostes();updateStats();
     gzSpeak('Temps terminé pour '+speechPosteName(snapshot.num)+'.');
+    gzTextVoiceNotify('GameZone — Fin de session',speechPosteName(snapshot.num)+' : temps terminé, télévision éteinte.','');
     addJournal('r',snapshot.num+' — Temps écoulé',(snapshot.client||'Client')+' · fin automatique',money(snapshot.montantSession)+' F','',{poste:snapshot.num,client:snapshot.client||'',sessionId:sid,typeActivite:'terminee_auto',tempsRestantSec:0,montant:money(snapshot.montantSession)});
     try{await fbRoot.transaction(root=>{
       root=root||{};const a=rootReadActive(root,snapshot,i)||{};
@@ -3767,6 +3768,12 @@ window.GymProofFree=(function(){
     const d=document.createElement('div');d.id='gz-net-status';d.className='gz-net-status';d.style.display='none';top.insertAdjacentElement('afterend',d);
   }
   function setStatusBanner(text,kind){ensureStatusBanner();const d=document.getElementById('gz-net-status');if(!d)return;if(!text){d.style.display='none';return;}d.style.display='block';d.className='gz-net-status '+(kind||'info');d.textContent=text;}
+  async function gzTextVoiceNotify(title,body,voice){
+    try{showToast('🔔 '+body);}catch(_e){}
+    try{if(voice)gzSpeak(voice);}catch(_e){}
+    try{if('Notification'in window&&Notification.permission==='granted'){const reg=await navigator.serviceWorker?.ready; if(reg)await reg.showNotification(title,{body,tag:'gz-'+title+'-'+Date.now()}); else new Notification(title,{body});}}catch(_e){}
+  }
+
 
   async function fetchRoomStatusG(){
     const token=await ensureFirebaseToken();const r=await fetch(TUYA_WORKER_URL,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:JSON.stringify({tenantKey:currentTenantKey,action:'roomStatus'})});
@@ -3857,9 +3864,11 @@ window.GymProofFree=(function(){
       const offlineIds=new Set(offline.map(d=>d.devid));
       const affected=postes.filter(p=>p&&offlineIds.has(resolvedDeviceId(p)));
       if(affected.length>=2){
-        setStatusBanner('⚡ Coupure générale probable : plusieurs prises hors ligne. Vérifier le courant ET le Wi-Fi. Aucune pause sans confirmation électrique.','danger');
+        setStatusBanner('⚡ Coupure générale détectée : plusieurs prises hors ligne. Mise en pause automatique des séances actives.','danger');
+        for(let j=0;j<postes.length;j++){if(postes[j]&&postes[j].actif&&offlineIds.has(resolvedDeviceId(postes[j]))){if(await gzPauseConfirmedG(j)){const m=speechPosteName(postes[j].num)+' mis en pause automatiquement : prise hors ligne.';gzTextVoiceNotify('GameZone — Coupure détectée',m,m);}}}
       }else if(affected.length===1){
-        setStatusBanner('⚠️ '+speechPosteName(affected[0].num)+' hors ligne : prise ou réseau local à vérifier. Le minuteur continue.','warn');
+        setStatusBanner('⏸ '+speechPosteName(affected[0].num)+' hors ligne : mise en pause automatique.','warn');
+        const j=postes.indexOf(affected[0]);if(j>=0&&affected[0].actif&&await gzPauseConfirmedG(j)){const m=speechPosteName(affected[0].num)+' mis en pause automatiquement : prise débranchée ou hors ligne.';gzTextVoiceNotify('GameZone — Pause automatique',m,m);}
       }else if(offline.length){
         setStatusBanner('☁️ Une prise Tuya hors ligne : vérifier réseau/courant, temps inchangés.','warn');
       }else setStatusBanner('', 'info');
@@ -3873,7 +3882,7 @@ window.GymProofFree=(function(){
         if(!p.actif){delete gzOffHistoryG[devid];if(st.online===true && st.switchOn===true)setStatusBanner('⚠️ '+p.num+' : prise ON sans séance. Vérifier manuellement dans Smart Life.','warn');continue;}
         if(gzManualOffConfirmedG(rec,st,p,Date.now())){
           // Seul le OFF réellement observé après un ON dans cette même session déclenche une pause.
-          setStatusBanner('⚠️ '+speechPosteName(p.num)+' : prise OFF détectée. Le temps n’est pas mis en pause automatiquement.','warn');
+          const paused=await gzPauseConfirmedG(i); if(paused){const msg=speechPosteName(p.num)+' mis en pause automatiquement : prise éteinte ou débranchée.';setStatusBanner('⏸ '+msg,'warn');gzTextVoiceNotify('GameZone — Pause automatique',msg,msg);}
         }
       }
     }catch(e){setStatusBanner('☁️ Service Tuya indisponible : aucune pause automatique, minuteurs conservés.','warn');}

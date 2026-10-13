@@ -1,5 +1,5 @@
 // Historique prive Patron / partage Gerant — version 49
-const CACHE='gamezone-v62-type-editor-safe-20261012-gerant-v3';
+const CACHE='gamezone-v62-type-editor-safe-20261012-gerant-v3-autopause1';
 const ASSETS=['./','./index.html','./manifest.webmanifest'];
 self.addEventListener('install',event=>{
   event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(ASSETS)).then(()=>self.skipWaiting()));
