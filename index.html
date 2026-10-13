@@ -815,7 +815,7 @@ function createRestRoot(tenantKey){
         throw new Error('Séance modifiée ou déjà en pause : actualisez');
       let sec=0;
       if(live.paused)sec=Math.max(0,Number(live.pauseRemainingSec)||0);
-      else sec=Math.max(0,Math.ceil((Number(live.finTs)||0-Date.now())/1000));
+      else sec=Math.max(0,Math.ceil(((Number(live.finTs)||0)-Date.now())/1000));
       if(!sec)throw new Error('Séance déjà terminée');
       const after=Object.assign({},live,{paused:true,pauseRemainingSec:sec,finTs:0,updatedAt:Date.now()});
       // If-Match rejette toute tentative d'écraser une nouvelle séance ou prolongation.
