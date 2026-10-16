@@ -297,6 +297,7 @@ button,.ni,.pc-btn{touch-action:manipulation}
 </style>
 <link rel="manifest" href="manifest.webmanifest">
 
+<script src="./management.js"></script>
 <script>
 /* GAMEZONE VOIX HOMME : réglage local à chaque appareil, aucune écriture Firebase. */
 (function(){
@@ -2036,7 +2037,7 @@ function renderPostes(){
     div.className=`pc ${ccls}`;
     div.innerHTML=`
       <div class="prise-ind ${priseInd}"></div>
-      <div class="pc-top"><div class="pc-num">${speechPosteName(p.num)}</div><span class="pb ${bcl}">${btxt}</span></div>
+      <div class="pc-top"><div class="pc-num">${escapeHtml(GameZoneManagement.displayName(p))}</div><span class="pb ${bcl}">${btxt}</span></div>
       <div class="pc-type">${escapeHtml(gzGerantTypeLabel(p))}</div>
       <div class="pc-timer-row">
         <div class="pc-timer ${tcls}">${p.actif?ts:'—:——'}</div>
@@ -2335,7 +2336,7 @@ function openStart(i){
   const p=postes[i];
   const other=gzSharedPlugOccupant(DB._cache||{},p,i);
   if(other){showToast('🔌 Prise utilisée par '+other.num+' : terminez cette session avant de lancer '+p.num);return;}
-  document.getElementById('ms-title').textContent=`${p.num} — Nouvelle session`;
+  document.getElementById('ms-title').textContent=`${GameZoneManagement.displayName(p)} — Nouvelle session`;
   document.getElementById('ms-nom').value='';
   const hasPrise=!!(p.devid);
   document.getElementById('prise-info-start').style.display=hasPrise?'block':'none';
@@ -2432,7 +2433,7 @@ async function confirmerSession(){
 function openPlus(i){
   modalPosteIdx=i;
   const p=postes[i];
-  document.getElementById('mp-title').textContent=`${p.num} — Prolonger`;
+  document.getElementById('mp-title').textContent=`${GameZoneManagement.displayName(p)} — Prolonger`;
   buildPlusGrid();
   buildPayGrid('pay-grid2','selPlusPlay');
   openModal('mo-plus');
@@ -2524,7 +2525,7 @@ function openStop(i){
   const mm=Math.floor(rest/60);
   const montant=Math.max(0,Number(p.montantSession)||Object.values(p.paiementsSession||{}).reduce((a,v)=>a+(Number(v)||0),0));
   document.getElementById('stop-name').textContent=p.client;
-  document.getElementById('stop-det').textContent=`${p.num} · ${mm} min ${String(rest%60).padStart(2,'0')} s restantes`;
+  document.getElementById('stop-det').textContent=`${GameZoneManagement.displayName(p)} · ${mm} min ${String(rest%60).padStart(2,'0')} s restantes`;
   document.getElementById('stop-amount').textContent=`Montant à retirer si annulé : ${montant.toLocaleString('fr-FR')} F`;
   document.getElementById('cancel-reason').value='';
   const cancelBtn=document.getElementById('btn-cancel-sale');
@@ -3280,7 +3281,7 @@ function renderRapport(){
         const m=(rev.perPoste.month[p.num]||0).toLocaleString('fr-FR');
         const t=(rev.perPoste.total[p.num]||0).toLocaleString('fr-FR');
         return `<div class="rrow" style="flex-direction:column;align-items:stretch;gap:4px">
-          <span class="rk" style="font-weight:600">${p.num} — ${p.type}</span>
+          <span class="rk" style="font-weight:600">${escapeHtml(GameZoneManagement.displayName(p))} — ${escapeHtml(p.type)}</span>
           <span style="font-size:11px;color:var(--muted)">Jour : ${d} F · Semaine : ${w} F · Mois : ${m} F · Total : ${t} F</span>
         </div>`;
       }).join('')

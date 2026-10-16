@@ -1,6 +1,6 @@
 // Historique prive Patron / partage Gerant — version 49
-const CACHE='gamezone-bah-v63-20261015-gerant-serveur-push';
-const ASSETS=['./','./index.html','./manifest.webmanifest'];
+const CACHE='gamezone-bah-v65-20261016-gestion1-gerant-serveur-push';
+const ASSETS=['./','./index.html','./manifest.webmanifest','./management.js'];
 self.addEventListener('install',event=>{
   event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(ASSETS)).then(()=>self.skipWaiting()));
 });
